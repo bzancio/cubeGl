@@ -1,159 +1,176 @@
 package com.cubeGl;
 
+import com.cubeGl.graphics.Camera;
+import com.cubeGl.graphics.Mesh;
+import com.cubeGl.graphics.ShaderProgram;
+import com.cubeGl.graphics.Window;
+import com.cubeGl.graphics.Transform;
+
 import org.joml.Matrix4f;
-import org.lwjgl.BufferUtils;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.opengl.GL;
+import static org.lwjgl.glfw.GLFW.*;
 
-import java.nio.FloatBuffer;
-
-import static org.lwjgl.opengl.GL11.*;
-import static org.lwjgl.opengl.GL30.*;
-
+/**
+ * Clase principal que contiene el punto de entrada (main) y el bucle de renderizado.
+ */
 public class Main {
-    private long window;
-    private int vaoId;
-    private int shaderProgram;
+    private Window window;
+    private Mesh cube;
+    private ShaderProgram shader;
+    private Transform transform;
+    private Camera camera;
+
+    // Variables para el control del tiempo (deltaTime y lastFrame)
+    private float deltaTime = 0.0f;
+    private float lastFrame = 0.0f;
 
     public void run() {
-        init();
-        loop();
-        GLFW.glfwTerminate();
+        try {
+            init();
+            loop();
+        } catch (Exception e) {
+            System.err.println("Un error fatal ocurrió:");
+            e.printStackTrace();
+        } finally {
+            cleanup();
+        }
     }
 
-    public void init() {
-        if (!GLFW.glfwInit()) {
-            throw new IllegalStateException("No se pudo iniciar GLFW");
-        }
+    /**
+     * Inicializa la ventana y carga los recursos de OpenGL (malla, shaders y cámara).
+     */
+    private void init() {
+        window = new Window(800, 800, "CubeGl Modular");
+        window.init();
 
-        GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE, GLFW.GLFW_FALSE);
-        window = GLFW.glfwCreateWindow(800, 600, "cubeGl", 0, 0);
-        if (window == 0) {
-            throw new RuntimeException("No se pudo crear la ventana");
-        }
+        // Carga de recursos
+        cube = Mesh.createCube();
+        shader = new ShaderProgram();
+        transform = new Transform();
 
-        GLFW.glfwMakeContextCurrent(window);
-        GLFW.glfwShowWindow(window);
-
-        GL.createCapabilities();
-        glEnable(GL_DEPTH_TEST);
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-
-        setupCube();
-        setupShaders();
+        // Inicializar la cámara
+        float fov = (float)Math.toRadians(60.0f);
+        float aspectRatio = 1.0f;
+        camera = new Camera(fov, aspectRatio, 0.1f, 100f);
     }
 
+    /**
+     * Procesa la entrada del teclado para mover la cámara.
+     */
+    private void processInput() {
+        // Usamos deltaTime para la traslación.
+        // NOTA: MoveSpeed es ahora una unidad base, la velocidad real la da cameraMoveSpeed.
+        float cameraMoveSpeed = 5.0f * deltaTime;
+
+        // La velocidad de rotación ya está escalada en grados/segundo
+        float cameraRotationSpeed = 80.0f * deltaTime;
+
+        // --- CERRAR VENTANA ---
+        if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            glfwSetWindowShouldClose(window.getWindowHandle(), true);
+        }
+
+        // --- TRASLACIÓN (Movimiento en ejes del mundo) ---
+        // W/S (Eje Z), A/D (Eje X), SPACE/SHIFT (Eje Y)
+
+        // Nota sobre W/S: El Z positivo en World Space es 'hacia ti'.
+        // Queremos 'avanzar' (Z negativo) cuando pulsamos W.
+        if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_W) == GLFW_PRESS) {
+            camera.movePosition(0, 0, cameraMoveSpeed);
+        }
+        if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_S) == GLFW_PRESS) {
+            camera.movePosition(0, 0, -cameraMoveSpeed);
+        }
+
+        // Movimiento lateral (Eje X)
+        if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_A) == GLFW_PRESS) {
+            camera.movePosition(-cameraMoveSpeed, 0, 0);
+        }
+        if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_D) == GLFW_PRESS) {
+            camera.movePosition(cameraMoveSpeed, 0, 0);
+        }
+
+        // Movimiento vertical (Eje Y)
+        if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_SPACE) == GLFW_PRESS) {
+            camera.movePosition(0, cameraMoveSpeed, 0);
+        }
+        if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+            camera.movePosition(0, -cameraMoveSpeed, 0);
+        }
+
+        // --- ROTACIÓN (Giro de la vista con Q/E) ---
+
+        // Rotación Yaw (horizontal) con Q/E
+        if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_Q) == GLFW_PRESS) {
+            // Q: Gira a la izquierda (Yaw negativo)
+            // Ya aplicamos deltaTime a cameraRotationSpeed, NO lo multiplicamos otra vez.
+            camera.processMouseMovement(-cameraRotationSpeed, 0, true);
+        }
+        if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_E) == GLFW_PRESS) {
+            // E: Gira a la derecha (Yaw positivo)
+            camera.processMouseMovement(cameraRotationSpeed, 0, true);
+        }
+
+        // La matriz de vista se actualiza una vez al final del loop para reflejar
+        // CUALQUIER cambio (traslación o rotación).
+        camera.updateViewMatrix();
+    }
+
+
+    /**
+     * Bucle principal de renderizado.
+     */
     private void loop() {
-        FloatBuffer fb = BufferUtils.createFloatBuffer(16);
+        while (!window.shouldClose()) {
+            // Calcular delta time (solo se calcula una vez por frame)
+            float currentFrame = (float)GLFW.glfwGetTime();
+            deltaTime = currentFrame - lastFrame;
+            lastFrame = currentFrame;
 
-        while (!GLFW.glfwWindowShouldClose(window)) {
-            glClear((GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+            // 1. Entrada de datos y Lógica
 
-            glUseProgram(shaderProgram);
+            // Procesamos la entrada y actualizamos la matriz de vista dentro de processInput()
+            processInput();
 
             float time = (float)GLFW.glfwGetTime();
-            Matrix4f transform  = new Matrix4f()
+
+            // --- Movimiento del Cubo (Matriz del Modelo) ---
+            transform.getModelMatrix().identity()
+                    // Si quieres que el cubo no se mueva, mantén la rotación en 0.0f
                     .rotateY(time * 0.5f)
                     .rotateX(time * 0.5f);
 
-            int transforMLoc = glGetUniformLocation(shaderProgram, "transform");
-            transform.get(fb);
-            glUniformMatrix4fv(transforMLoc, false, fb);
+            // 2. CÁLCULO DE LA MATRIZ MVP (Modelo * Vista * Proyección)
+            Matrix4f mvp = camera.getViewProjection().mul(transform.getModelMatrix());
 
-            glBindVertexArray(vaoId);
-            glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+            // 3. Renderizado
+            window.clear();
+            shader.use();
+            shader.setUniformMat4f("mvp", mvp);
 
-            GLFW.glfwSwapBuffers(window);
-            GLFW.glfwPollEvents();
+            cube.render();
+
+            // 4. Presentación
+            window.swapBuffers();
+            window.pollEvents();
         }
+    }
+
+    /**
+     * Libera los recursos de OpenGL y termina GLFW.
+     */
+    private void cleanup() {
+        if (shader != null) {
+            shader.cleanup();
+        }
+        if (cube != null) {
+            cube.cleanup();
+        }
+
+        GLFW.glfwTerminate();
     }
 
     public static void main(String[] args) {
         new Main().run();
     }
-
-    private void setupCube() {
-        float[] vertices = {
-                // posiciones        // colores (RGB)
-                -0.5f, -0.5f, -0.5f,   1.0f, 0.0f, 0.0f, // rojo
-                0.5f, -0.5f, -0.5f,   0.0f, 1.0f, 0.0f, // verde
-                0.5f,  0.5f, -0.5f,   0.0f, 0.0f, 1.0f, // azul
-                -0.5f,  0.5f, -0.5f,   1.0f, 1.0f, 0.0f, // amarillo
-                -0.5f, -0.5f,  0.5f,   1.0f, 0.0f, 1.0f, // magenta
-                0.5f, -0.5f,  0.5f,   0.0f, 1.0f, 1.0f, // cian
-                0.5f,  0.5f,  0.5f,   1.0f, 1.0f, 1.0f, // blanco
-                -0.5f,  0.5f,  0.5f,   0.0f, 0.0f, 0.0f  // negro
-        };
-
-        int[] indices = {
-                0, 1, 2, 2, 3, 0, // cara trasera
-                4, 5, 6, 6, 7, 4, // cara delantera
-                0, 4, 7, 7, 3, 0, // izquierda
-                1, 5, 6, 6, 2, 1, // derecha
-                3, 2, 6, 6, 7, 3, // arriba
-                0, 1, 5, 5, 4, 0  // abajo
-        };
-
-
-        vaoId = glGenVertexArrays();
-        glBindVertexArray(vaoId);
-
-        int vboId = glGenBuffers();
-        glBindBuffer(GL_ARRAY_BUFFER, vboId);
-        glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
-
-        int eboId = glGenBuffers();
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eboId);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
-
-        int stride = (3 + 3) * Float.BYTES;
-
-        glVertexAttribPointer(0, 3, GL_FLOAT, false, stride, 0);
-        glEnableVertexAttribArray(0);
-
-        glVertexAttribPointer(1, 3, GL_FLOAT, false, stride, 3 * Float.BYTES);
-        glEnableVertexAttribArray(1);
-    }
-
-    private void setupShaders() {
-        String vertexShaderSource = """
-                #version 330 core
-                 layout(location = 0) in vec3 position;
-                 layout(location = 1) in vec3 color;
-                
-                 out vec3 vertexColor; // saldrá hacia el fragment shader
-                
-                 uniform mat4 transform;
-                
-                 void main() {
-                     gl_Position = transform * vec4(position, 1.0);
-                     vertexColor = color;
-                 }""";
-
-        String fragmentShaderSource = """
-                #version 330 core
-                in vec3 vertexColor;
-                out vec4 fragColor;
-                
-                void main() {
-                    fragColor = vec4(vertexColor, 1.0);
-                }""";
-
-        int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-        glShaderSource(vertexShader, vertexShaderSource);
-        glCompileShader(vertexShader);
-
-        int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fragmentShader, fragmentShaderSource);
-        glCompileShader(fragmentShader);
-
-        shaderProgram = glCreateProgram();
-        glAttachShader(shaderProgram, vertexShader);
-        glAttachShader(shaderProgram, fragmentShader);
-        glLinkProgram(shaderProgram);
-
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-    }
-
 }

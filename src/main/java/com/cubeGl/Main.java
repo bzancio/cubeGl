@@ -33,7 +33,7 @@ public class Main {
         GL.createCapabilities();
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
-        setupTriangle();
+        setupSquare();
         setupShaders();
     }
 
@@ -43,7 +43,7 @@ public class Main {
 
             glUseProgram(shaderProgram);
             glBindVertexArray(vaoId);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
             GLFW.glfwSwapBuffers(window);
             GLFW.glfwPollEvents();
@@ -54,12 +54,19 @@ public class Main {
         new Main().run();
     }
 
-    private void setupTriangle() {
+    private void setupSquare() {
         float[] vertices = {
-                0.0f,  0.5f,    1.0f, 0.0f, 0.0f,  // rojo
-                -0.5f, -0.5f,    0.0f, 1.0f, 0.0f,  // verde
-                0.5f, -0.5f,    0.0f, 0.0f, 1.0f   // azul
+                -0.5f,  0.5f,      1.0f, 0.0f, 0.0f,   // 0 - A (rojo)
+                0.5f,  0.5f,      0.0f, 1.0f, 0.0f,   // 1 - B (verde)
+                -0.5f, -0.5f,      0.0f, 0.0f, 1.0f,   // 2 - C (azul)
+                0.5f, -0.5f,      1.0f, 1.0f, 0.0f    // 3 - D (amarillo)
         };
+
+        int[] indices = {
+                0, 1, 2,   // Primer triángulo (A-B-C)
+                1, 3, 2    // Segundo triángulo (B-D-C)
+        };
+
 
         vaoId = glGenVertexArrays();
         glBindVertexArray(vaoId);
@@ -69,6 +76,10 @@ public class Main {
         glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
 
         int stride = (2 + 3) * Float.BYTES;
+
+        int eboId = glGenBuffers();
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eboId);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
 
         glVertexAttribPointer(0, 2, GL_FLOAT, false, stride, 0L);
         glEnableVertexAttribArray(0);

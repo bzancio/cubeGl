@@ -4,6 +4,8 @@ import org.joml.Matrix4f;
 import org.lwjgl.BufferUtils;
 
 import java.nio.FloatBuffer;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.lwjgl.opengl.GL20.*;
 
@@ -12,11 +14,23 @@ import static org.lwjgl.opengl.GL20.*;
  */
 public class ShaderProgram {
     private final int programId;
-    private final FloatBuffer fb; // Buffer para pasar matrices a OpenGL
+    private final FloatBuffer fb;
+    private final Map<String, Integer> uniformLocations;
 
     public ShaderProgram() {
+        this.uniformLocations = new HashMap<>();
         this.programId = setupShaders();
         this.fb = BufferUtils.createFloatBuffer(16);
+
+        // Inicializar la ubicación de los uniforms esenciales
+        createUniform("mvp");
+        createUniform("uTexture");
+    }
+
+    // Método auxiliar para crear y guardar la ubicación de un uniform
+    private void createUniform(String uniformName) {
+        int location = glGetUniformLocation(programId, uniformName);
+        uniformLocations.put(uniformName, location);
     }
 
     private int compileShader(String source, int type) {
@@ -33,28 +47,36 @@ public class ShaderProgram {
     }
 
     private int setupShaders() {
+        // Shaders embebidos, adaptados para la textura:
         String vertexShaderSource = """
                 #version 330 core
-                layout(location = 0) in vec3 position;
-                layout(location = 1) in vec3 color;
-                // ... (otros atributos)
+                layout(location = 0) in vec3 aPos;     // Usamos aPos para claridad
+                layout(location = 1) in vec3 aColor;
+                layout(location = 2) in vec2 aTexCoord; // NUEVO: Coordenadas de textura
                 
-                out vec3 vertexColor;
+                out vec2 vTexCoord;
+                out vec3 vColor;
                 
-                uniform mat4 mvp; // <-- Cambiamos 'transform' por 'mvp'
+                uniform mat4 mvp;
                 
                 void main() {
-                    gl_Position = mvp * vec4(position, 1.0f); // Aplicamos la matriz MVP
-                    vertexColor = color;
+                    vTexCoord = aTexCoord;
+                    vColor = aColor;
+                    gl_Position = mvp * vec4(aPos, 1.0f);
                 }""";
 
         String fragmentShaderSource = """
                 #version 330 core
-                in vec3 vertexColor;
+                
+                uniform sampler2D uTexture; // NUEVO: Uniform para muestrear la textura
+                
+                in vec2 vTexCoord;
+                in vec3 vColor; // Mantenemos el color por si acaso
                 out vec4 fragColor;
                 
                 void main() {
-                    fragColor = vec4(vertexColor, 1.0f);
+                    // Usamos la textura para obtener el color final
+                    fragColor = texture(uTexture, vTexCoord);
                 }""";
 
         // 1. Compilar shaders
@@ -88,18 +110,33 @@ public class ShaderProgram {
     }
 
     /**
+     * Desactiva este programa de shaders.
+     */
+    public void unuse() {
+        glUseProgram(0);
+    }
+
+    /**
      * Establece un valor de matriz 4x4 (uniform) en el shader.
-     * @param name Nombre del uniform en el shader (ej. "transform").
-     * @param matrix La matriz de JOML a pasar.
      */
     public void setUniformMat4f(String name, Matrix4f matrix) {
-        int location = glGetUniformLocation(programId, name);
+        int location = uniformLocations.get(name);
         if (location != -1) {
-            // Rellenar el FloatBuffer con los datos de la matriz
             matrix.get(fb);
-            // Pasar los datos a la variable uniform del shader
             glUniformMatrix4fv(location, false, fb);
         }
+    }
+
+    /**
+     * Establece el valor de la uniform de la textura (sampler2D) en el shader.
+     */
+    public void setUniformTexture(String uniformName, int unit) {
+        Integer location = uniformLocations.get(uniformName);
+        if (location == null || location == -1) {
+            System.err.println("Advertencia: Uniform '" + uniformName + "' no se encontró o no se inicializó.");
+            return;
+        }
+        glUniform1i(location, unit);
     }
 
     /**

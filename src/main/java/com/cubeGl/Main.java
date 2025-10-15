@@ -5,6 +5,7 @@ import com.cubeGl.graphics.Mesh;
 import com.cubeGl.graphics.ShaderProgram;
 import com.cubeGl.graphics.Window;
 import com.cubeGl.graphics.Transform;
+import com.cubeGl.graphics.Texture; // Importar la clase Texture
 
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
@@ -19,6 +20,7 @@ public class Main {
     private ShaderProgram shader;
     private Transform transform;
     private Camera camera;
+    private Texture texture; // Campo para la textura
 
     // Variables para el control del tiempo (deltaTime y lastFrame)
     private float deltaTime = 0.0f;
@@ -37,7 +39,7 @@ public class Main {
     }
 
     /**
-     * Inicializa la ventana y carga los recursos de OpenGL (malla, shaders y cámara).
+     * Inicializa la ventana y carga los recursos de OpenGL (malla, shaders, cámara y textura).
      */
     private void init() {
         window = new Window(800, 800, "CubeGl Modular");
@@ -47,6 +49,22 @@ public class Main {
         cube = Mesh.createCube();
         shader = new ShaderProgram();
         transform = new Transform();
+
+        // --- Cargar la Textura sasel.png ---
+        try {
+            // Asume que 'sasel.png' está en el classpath (ej: src/main/resources/)
+            texture = new Texture("sasel.png");
+        } catch (Exception e) {
+            System.err.println("ERROR: No se pudo cargar la textura 'sasel.png'.");
+            e.printStackTrace();
+            throw new RuntimeException("Fallo al inicializar recursos.");
+        }
+
+        // Configuración de la uniform de la textura en el shader (solo se hace una vez)
+        shader.use();
+        // Le decimos al shader que la uniform 'uTexture' debe leer de la unidad de textura 0
+        shader.setUniformTexture("uTexture", 0);
+        shader.unuse();
 
         // Inicializar la cámara
         float fov = (float)Math.toRadians(60.0f);
@@ -58,11 +76,7 @@ public class Main {
      * Procesa la entrada del teclado para mover la cámara.
      */
     private void processInput() {
-        // Usamos deltaTime para la traslación.
-        // NOTA: MoveSpeed es ahora una unidad base, la velocidad real la da cameraMoveSpeed.
         float cameraMoveSpeed = 5.0f * deltaTime;
-
-        // La velocidad de rotación ya está escalada en grados/segundo
         float cameraRotationSpeed = 80.0f * deltaTime;
 
         // --- CERRAR VENTANA ---
@@ -70,11 +84,8 @@ public class Main {
             glfwSetWindowShouldClose(window.getWindowHandle(), true);
         }
 
-        // --- TRASLACIÓN (Movimiento en ejes del mundo) ---
-        // W/S (Eje Z), A/D (Eje X), SPACE/SHIFT (Eje Y)
-
-        // Nota sobre W/S: El Z positivo en World Space es 'hacia ti'.
-        // Queremos 'avanzar' (Z negativo) cuando pulsamos W.
+        // --- TRASLACIÓN (Movimiento Local/Relativo) ---
+        // W/S (Front/Back)
         if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_W) == GLFW_PRESS) {
             camera.movePosition(0, 0, cameraMoveSpeed);
         }
@@ -82,7 +93,7 @@ public class Main {
             camera.movePosition(0, 0, -cameraMoveSpeed);
         }
 
-        // Movimiento lateral (Eje X)
+        // A/D (Left/Right - Strafe)
         if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_A) == GLFW_PRESS) {
             camera.movePosition(-cameraMoveSpeed, 0, 0);
         }
@@ -90,7 +101,7 @@ public class Main {
             camera.movePosition(cameraMoveSpeed, 0, 0);
         }
 
-        // Movimiento vertical (Eje Y)
+        // SPACE/SHIFT (Up/Down)
         if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_SPACE) == GLFW_PRESS) {
             camera.movePosition(0, cameraMoveSpeed, 0);
         }
@@ -99,20 +110,13 @@ public class Main {
         }
 
         // --- ROTACIÓN (Giro de la vista con Q/E) ---
-
-        // Rotación Yaw (horizontal) con Q/E
         if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_Q) == GLFW_PRESS) {
-            // Q: Gira a la izquierda (Yaw negativo)
-            // Ya aplicamos deltaTime a cameraRotationSpeed, NO lo multiplicamos otra vez.
             camera.processMouseMovement(-cameraRotationSpeed, 0, true);
         }
         if (glfwGetKey(window.getWindowHandle(), GLFW_KEY_E) == GLFW_PRESS) {
-            // E: Gira a la derecha (Yaw positivo)
             camera.processMouseMovement(cameraRotationSpeed, 0, true);
         }
 
-        // La matriz de vista se actualiza una vez al final del loop para reflejar
-        // CUALQUIER cambio (traslación o rotación).
         camera.updateViewMatrix();
     }
 
@@ -122,21 +126,18 @@ public class Main {
      */
     private void loop() {
         while (!window.shouldClose()) {
-            // Calcular delta time (solo se calcula una vez por frame)
+            // Calcular delta time
             float currentFrame = (float)GLFW.glfwGetTime();
             deltaTime = currentFrame - lastFrame;
             lastFrame = currentFrame;
 
             // 1. Entrada de datos y Lógica
-
-            // Procesamos la entrada y actualizamos la matriz de vista dentro de processInput()
             processInput();
 
             float time = (float)GLFW.glfwGetTime();
 
             // --- Movimiento del Cubo (Matriz del Modelo) ---
             transform.getModelMatrix().identity()
-                    // Si quieres que el cubo no se mueva, mantén la rotación en 0.0f
                     .rotateY(time * 0.5f)
                     .rotateX(time * 0.5f);
 
@@ -147,6 +148,9 @@ public class Main {
             window.clear();
             shader.use();
             shader.setUniformMat4f("mvp", mvp);
+
+            // Enlazar (Bind) la Textura ANTES de dibujar el cubo
+            texture.bind();
 
             cube.render();
 
@@ -165,6 +169,9 @@ public class Main {
         }
         if (cube != null) {
             cube.cleanup();
+        }
+        if (texture != null) { // Liberar la textura
+            texture.cleanup();
         }
 
         GLFW.glfwTerminate();

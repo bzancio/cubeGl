@@ -31,7 +31,7 @@ public class Main {
         GLFW.glfwShowWindow(window);
 
         GL.createCapabilities();
-        glClearColor(0.5f, 0.7f, 1.0f, 0.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
         setupTriangle();
         setupShaders();
@@ -56,10 +56,11 @@ public class Main {
 
     private void setupTriangle() {
         float[] vertices = {
-                0.0f, 0.5f,
-                -0.5f, -0.5f,
-                0.5f, -0.5f
+                0.0f,  0.5f,    1.0f, 0.0f, 0.0f,  // rojo
+                -0.5f, -0.5f,    0.0f, 1.0f, 0.0f,  // verde
+                0.5f, -0.5f,    0.0f, 0.0f, 1.0f   // azul
         };
+
         vaoId = glGenVertexArrays();
         glBindVertexArray(vaoId);
 
@@ -67,23 +68,35 @@ public class Main {
         glBindBuffer(GL_ARRAY_BUFFER, vboId);
         glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
 
-        glVertexAttribPointer(0, 2, GL_FLOAT, false, 0, 0);
+        int stride = (2 + 3) * Float.BYTES;
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, false, stride, 0L);
         glEnableVertexAttribArray(0);
+
+        glVertexAttribPointer(1, 3, GL_FLOAT, false, stride, 2L * Float.BYTES);
+        glEnableVertexAttribArray(1);
     }
 
     private void setupShaders() {
         String vertexShaderSource = """
                 #version 330 core
-                layout(location = 0) in vec2 position;
-                void main() {
-                    gl_Position = vec4(position, 0.0, 1.0);
-                }""";
+                 layout(location = 0) in vec2 position;
+                 layout(location = 1) in vec3 color;
+                
+                 out vec3 vertexColor; // saldrá hacia el fragment shader
+                
+                 void main() {
+                     gl_Position = vec4(position, 0.0, 1.0);
+                     vertexColor = color;
+                 }""";
 
         String fragmentShaderSource = """
                 #version 330 core
+                in vec3 vertexColor;
                 out vec4 fragColor;
+                
                 void main() {
-                    fragColor = vec4(1.0, 0.5, 0.2, 1.0);
+                    fragColor = vec4(vertexColor, 1.0);
                 }""";
 
         int vertexShader = glCreateShader(GL_VERTEX_SHADER);
